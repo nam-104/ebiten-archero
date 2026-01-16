@@ -146,3 +146,14 @@ func (p *Player) HasSkill(t SkillType) bool {
 	}
 	return false
 }
+
+// GetSkillCount trả về số lượng kỹ năng cùng loại mà Player sở hữu
+func (p *Player) GetSkillCount(t SkillType) int {
+	count := 0
+	for _, s := range p.Skills {
+		if s.Type == t {
+			count++
+		}
+	}
+	return count
+}

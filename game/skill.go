@@ -9,6 +9,7 @@ const (
 	Multishot                      // Bắn 2 tia
 	PiercingShot                   // Đạn xuyên thấu
 	DiagonalArrow                  // Bắn chéo
+	ParallelShot                   // Bắn song song (Front Arrow +1)
 )
 
 type Skill struct {
@@ -22,6 +23,7 @@ var AllSkills = []Skill{
 	{Type: AttackBoost, Name: "AttackBoost +", Description: "+20% ATK"},
 	{Type: SpeedBoost, Name: "SpeedBoost +", Description: "SpeedBoost"},
 	{Type: Multishot, Name: "Multishot", Description: "Multishot"},
-	{Type: PiercingShot, Name: "PiercingShot", Description: "PiercingShot"},    // Thêm cho đủ bộ
-	{Type: DiagonalArrow, Name: "DiagonalArrow", Description: "DiagonalArrow"}, // THÊM DÒNG NÀY
+	{Type: ParallelShot, Name: "ParallelShot", Description: "+1 Parallel Arrow"}, // Add this
+	{Type: PiercingShot, Name: "PiercingShot", Description: "PiercingShot"},
+	{Type: DiagonalArrow, Name: "DiagonalArrow", Description: "DiagonalArrow"},
 }

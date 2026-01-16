@@ -12,7 +12,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
-	"pixcel-game/game"
+	"pixcel-game/game" // alias để dùng constant skill
 	g "pixcel-game/game"
 	"pixcel-game/systems"
 )
@@ -50,6 +50,13 @@ type ArcheroGame struct {
 	mapHeightPx         float64
 	gameState           int          // Lưu trạng thái hiện tại
 	currentSkillOptions []game.Skill // Các kỹ năng đang hiển thị để chọn
+	delayedProjectiles  []DelayedProjectile
+}
+
+type DelayedProjectile struct {
+	DelayFrames int
+	TargetX     float64
+	TargetY     float64
 }
 
 type Potion struct {
@@ -146,10 +153,9 @@ func (gme *ArcheroGame) resetStateFromSave() {
 
 func (gme *ArcheroGame) Update() error {
 	// Nếu nhấn phím L thì hiện menu kỹ năng (để test)
-	if ebiten.IsKeyPressed(ebiten.KeyL) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyL) {
 		gme.gameState = StateSkillSelect
-		// Lấy đại 3 kỹ năng đầu tiên trong AllSkills để hiện
-		gme.currentSkillOptions = game.AllSkills[:3]
+		gme.randomizeSkillOptions()
 	}
 
 	if gme.gameState == StateSkillSelect {
@@ -185,6 +191,7 @@ func (gme *ArcheroGame) Update() error {
 
 	gme.handleAutoAttack()
 	gme.updateProjectiles()
+	gme.updateDelayedProjectiles()
 	gme.cleanupEntities()
 	gme.handlePotions()
 
@@ -196,19 +203,41 @@ func (gme *ArcheroGame) Update() error {
 }
 
 func (gme *ArcheroGame) handleSkillSelection() {
-	if ebiten.IsKeyPressed(ebiten.Key1) {
+	// Reroll khi nhấn R
+	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
+		gme.randomizeSkillOptions()
+	}
+
+	if inpututil.IsKeyJustPressed(ebiten.Key1) {
 		gme.player.LearnSkill(gme.currentSkillOptions[0])
-		gme.gameState = StatePlaying // Chọn xong thì quay lại chơi
+		gme.gameState = StatePlaying
 	}
-	if ebiten.IsKeyPressed(ebiten.Key2) {
+	if inpututil.IsKeyJustPressed(ebiten.Key2) {
 		gme.player.LearnSkill(gme.currentSkillOptions[1])
-		gme.gameState = StatePlaying // Chọn xong thì quay lại chơi
+		gme.gameState = StatePlaying
 	}
-	if ebiten.IsKeyPressed(ebiten.Key3) {
+	if inpututil.IsKeyJustPressed(ebiten.Key3) {
 		gme.player.LearnSkill(gme.currentSkillOptions[2])
-		gme.gameState = StatePlaying // Chọn xong thì quay lại chơi
+		gme.gameState = StatePlaying
 	}
-	// Tương tự cho phím 2 và 3...
+}
+
+func (gme *ArcheroGame) randomizeSkillOptions() {
+	// Tạo bản sao danh sách skill để shuffle
+	shuffled := make([]game.Skill, len(game.AllSkills))
+	copy(shuffled, game.AllSkills)
+
+	// Shuffle
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+
+	// Lấy 3 skill đầu tiên (hoặc ít hơn nếu tổng skill < 3)
+	count := 3
+	if len(shuffled) < 3 {
+		count = len(shuffled)
+	}
+	gme.currentSkillOptions = shuffled[:count]
 }
 
 func (gme *ArcheroGame) handleMovement() {
@@ -295,31 +324,14 @@ func (gme *ArcheroGame) handleAutoAttack() {
 	dx /= len
 	dy /= len
 
-	// Vector vuông góc
-	perpX := -dy
-	perpY := dx
+	// Vector vuông góc (không còn dùng cho multishot, nhưng có thể giữ nếu cần tính toán khác - hiện tại xóa để fix lint)
+	// perpX := -dy
+	// perpY := dx
 
-	offset := 4.0
+	// offset := 4.0
 
-	if gme.player.HasSkill(game.Multishot) {
-		ox := perpX * offset
-		oy := perpY * offset
-
-		// Bắn 2 viên song song
-		gme.spawnOffsetProjectile(px, py, ex, ey, ox, oy)
-		gme.spawnOffsetProjectile(px, py, ex, ey, -ox, -oy)
-
-	} else {
-		// Chỉ bắn 1 viên thường
-		p := g.NewProjectile(
-			gme.projectileImg,
-			px-4, py-4,
-			ex, ey,
-			4.5,
-			gme.player.AttackDamage,
-		)
-		gme.projectiles = append(gme.projectiles, p)
-	}
+	// Logic bắn đạn chính (đã gộp cả Volley + Multishot)
+	gme.fireAtTarget(ex, ey)
 
 	// Nếu có kỹ năng DiagonalArrow (Bắn chéo 3 tia)
 	if gme.player.HasSkill(game.DiagonalArrow) {
@@ -330,17 +342,32 @@ func (gme *ArcheroGame) handleAutoAttack() {
 		angleLeft := angle - (math.Pi / 6)     // Pi/6 tương đương 30 độ
 		exLeft := px + math.Cos(angleLeft)*200 // 200 là tầm xa giả định để định hướng
 		eyLeft := py + math.Sin(angleLeft)*200
-		gme.spawnProjectile(exLeft, eyLeft) // Truyền đúng tên biến đã khai báo
+		gme.fireAtTarget(exLeft, eyLeft) // Dùng fireAtTarget thay vì spawnProjectile
 
 		// 3. Tính tọa độ mục tiêu giả định cho tia bên PHẢI (Lệch +30 độ)
 		angleRight := angle + (math.Pi / 6)
 		exRight := px + math.Cos(angleRight)*200
 		eyRight := py + math.Sin(angleRight)*200
-		gme.spawnProjectile(exRight, eyRight)
+		gme.fireAtTarget(exRight, eyRight)
 	}
 
 	// 3. Đánh dấu người chơi đã tấn công để tính cooldown (tốc độ đánh)
 	gme.player.Attack()
+}
+
+// fireAtTarget thực hiện quy trình bắn vào 1 điểm mục tiêu
+// Bao gồm: Bắn ngay lập tức (spawnVolley) + Lên lịch bắn trễ (Multishot)
+func (gme *ArcheroGame) fireAtTarget(targetX, targetY float64) {
+	// 1. Bắn ngay lập tức (Xử lý cả ParallelShot bên trong spawnVolley)
+	gme.spawnVolley(targetX, targetY)
+
+	// 2. Xử lý Multishot (Bắn lặp lại sau delay)
+	multiCount := gme.player.GetSkillCount(game.Multishot)
+	if multiCount > 0 {
+		for i := 1; i <= multiCount; i++ {
+			gme.addDelayedProjectile(i*8, targetX, targetY)
+		}
+	}
 }
 
 func (gme *ArcheroGame) spawnOffsetProjectile(
@@ -358,16 +385,97 @@ func (gme *ArcheroGame) spawnOffsetProjectile(
 	gme.projectiles = append(gme.projectiles, p)
 }
 
+func (gme *ArcheroGame) addDelayedProjectile(delay int, targetX, targetY float64) {
+	gme.delayedProjectiles = append(gme.delayedProjectiles, DelayedProjectile{
+		DelayFrames: delay,
+		TargetX:     targetX,
+		TargetY:     targetY,
+	})
+}
+
+func (gme *ArcheroGame) updateDelayedProjectiles() {
+	activeDelayed := gme.delayedProjectiles[:0]
+	for _, dp := range gme.delayedProjectiles {
+		dp.DelayFrames--
+		if dp.DelayFrames <= 0 {
+			// Khi hết thời gian chờ, bắn volley (để áp dụng cả ParallelShot cho phát bắn trễ này)
+			gme.spawnVolley(dp.TargetX, dp.TargetY)
+		} else {
+			activeDelayed = append(activeDelayed, dp)
+		}
+	}
+	gme.delayedProjectiles = activeDelayed
+}
+
+// spawnProjectile bắn 1 viên đạn đơn (cơ bản)
 func (gme *ArcheroGame) spawnProjectile(targetX, targetY float64) {
 	px, py := gme.player.GetCenter()
 	p := g.NewProjectile(gme.projectileImg, px-4, py-4, targetX, targetY, 4.5, gme.player.AttackDamage)
 
 	// Nếu có kỹ năng xuyên thấu (Piercing), bạn có thể thiết lập ở đây
 	if gme.player.HasSkill(game.PiercingShot) {
-		p.IsPiercing = true // Bạn cần thêm biến này vào struct Projectile
+		p.IsPiercing = true
 	}
 
 	gme.projectiles = append(gme.projectiles, p)
+}
+
+// spawnVolley xử lý việc bắn đạn song song (ParallelShot)
+// Nếu không có skill ParallelShot, nó chỉ bắn 1 viên (gọi spawnProjectile)
+// Nếu có N skill, nó bắn N+1 viên song song
+func (gme *ArcheroGame) spawnVolley(targetX, targetY float64) {
+	parallelCount := gme.player.GetSkillCount(game.ParallelShot)
+	if parallelCount == 0 {
+		gme.spawnProjectile(targetX, targetY)
+		return
+	}
+
+	px, py := gme.player.GetCenter()
+	// Vector hướng
+	dx := targetX - px
+	dy := targetY - py
+	len := math.Hypot(dx, dy)
+	dx /= len
+	dy /= len
+
+	// Vector vuông góc
+	perpX := -dy
+	perpY := dx
+
+	// Tổng số đạn = 1 (gốc) + parallelCount
+	ctx := parallelCount + 1
+	spacing := 10.0 // Khoảng cách giữa các viên đạn
+
+	// Tính toán vị trí bắt đầu để chùm đạn cân đối ở giữa
+	// Ví dụ: 2 viên -> offset -5 và +5
+	// 3 viên -> offset -10, 0, +10
+	startOffset := -(float64(ctx-1) * spacing) / 2.0
+
+	for i := 0; i < ctx; i++ {
+		offset := startOffset + float64(i)*spacing
+
+		// Tọa độ bắn ra (offset theo vector vuông góc)
+		spawnX := px + perpX*offset
+		spawnY := py + perpY*offset
+
+		// Tọa độ đích cũng phải offset tương ứng để đạn bay song song
+		destX := targetX + perpX*offset
+		destY := targetY + perpY*offset
+
+		// Tạo projectile thủ công (hoặc refactor spawnProjectile để nhận tọa độ t)
+		// Ở đây ta gọi NewProjectile trực tiếp
+		p := g.NewProjectile(
+			gme.projectileImg,
+			spawnX-4, spawnY-4, // Trừ 4 để căn giữa tâm đạn (giả sử đạn 8x8 ??? actually 16x16 but logic varies)
+			destX, destY,
+			4.5,
+			gme.player.AttackDamage,
+		)
+		if gme.player.HasSkill(game.PiercingShot) {
+			p.IsPiercing = true
+		}
+		gme.projectiles = append(gme.projectiles, p)
+	}
 }
 
 func (gme *ArcheroGame) updateProjectiles() {
@@ -500,7 +608,8 @@ func (gme *ArcheroGame) drawUI(screen *ebiten.Image) {
 
 	ebitenutil.DebugPrintAt(screen, "HP", int(x), int(y)-12)
 	ebitenutil.DebugPrintAt(screen, "Wave: "+itoa(gme.wave.CurrentWave), int(x), int(y)+20)
-	ebitenutil.DebugPrintAt(screen, "F5: Save | F9: Load | ESC: Quit", int(x), int(y)+36)
+	ebitenutil.DebugPrintAt(screen, "F5: Save | F9: Load | L: Skills | ESC: Quit", int(x), int(y)+36)
+
 }
 
 // Phát hiện cổng chuyển map và xử lý nhấn E
