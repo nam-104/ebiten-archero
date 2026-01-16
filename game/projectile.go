@@ -1,7 +1,6 @@
 package game
 
 import (
-	"image"
 	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -44,8 +43,8 @@ func NewProjectile(img *ebiten.Image, x, y, targetX, targetY, speed, damage floa
 		Damage:      damage,
 		Active:      true,
 		Img:         img,
-		Width:       8.0,
-		Height:      8.0,
+		Width:       16.0,
+		Height:      16.0,
 		LifeTime:    0.0,
 		MaxLifeTime: 5.0, // 5 giây
 	}
@@ -71,20 +70,36 @@ func (p *Projectile) Update(screenWidth, screenHeight float64) {
 
 // Draw vẽ projectile lên màn hình
 func (p *Projectile) Draw(screen *ebiten.Image, cameraX, cameraY float64) {
-	if !p.Active {
+	if !p.Active || p.Img == nil {
 		return
 	}
 
 	opts := &ebiten.DrawImageOptions{}
-	opts.GeoM.Translate(p.X-cameraX, p.Y-cameraY)
 
-	if p.Img != nil {
-		// Vẽ sprite nếu có
-		screen.DrawImage(
-			p.Img.SubImage(image.Rect(0, 0, 8, 8)).(*ebiten.Image),
-			opts,
-		)
-	}
+	// Tính góc xoay dựa trên vector vận tốc
+	angle := math.Atan2(p.VY, p.VX)
+
+	w, h := p.Img.Bounds().Dx(), p.Img.Bounds().Dy()
+
+	// Dời tâm về giữa ảnh để xoay
+	opts.GeoM.Translate(-float64(w)/2, -float64(h)/2)
+
+	// Scale nhỏ lại 0.5
+	opts.GeoM.Scale(0.5, 0.5)
+
+	// Xoay ảnh (giả sử ảnh gốc mũi tên hướng sang PHẢI -> 0 độ)
+	// Nếu nó hướng lên thì +Pi/2. Nếu hướng chéo thì +Pi/4.
+	// User report: "nằm ngang" (sai hướng). Thử bỏ offset (giả sử asset gốc đã xoay đúng hoặc là hướng phải).
+	// Nếu Asset là Arrow01(32x32), thường là chéo 45 độ (Up-Right).
+	// Hãy thử -Pi/4 (để xoay nó về 0 rồi +angle) nếu nó là chéo.
+	// Nhưng user bảo "nằm ngang", có thể nó đang bị xoay 90 độ.
+	// Thử dùng angle thuần túy trước.
+	opts.GeoM.Rotate(angle)
+
+	// Dời về vị trí hiển thị (tâm của projectile)
+	opts.GeoM.Translate(p.X+p.Width/2-cameraX, p.Y+p.Height/2-cameraY)
+
+	screen.DrawImage(p.Img, opts)
 }
 
 // CheckCollision kiểm tra va chạm với enemy

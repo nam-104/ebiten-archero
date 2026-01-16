@@ -103,7 +103,7 @@ func NewArcheroGame() *ArcheroGame {
 	if err != nil {
 		log.Fatal(err)
 	}
-	projectileImg, _, err := ebitenutil.NewImageFromFile(filepath.Join(assetsBase, "images", "shuriken.png"))
+	projectileImg, _, err := ebitenutil.NewImageFromFile(filepath.Join(assetsBase, "images", "arrow.png"))
 	if err != nil {
 		log.Printf("khong load duoc projectile img, su dung nil: %v", err)
 	}
@@ -444,7 +444,7 @@ func (gme *ArcheroGame) spawnVolley(targetX, targetY float64) {
 
 	// Tổng số đạn = 1 (gốc) + parallelCount
 	ctx := parallelCount + 1
-	spacing := 10.0 // Khoảng cách giữa các viên đạn
+	spacing := 5.0 // Khoảng cách giữa các viên đạn
 
 	// Tính toán vị trí bắt đầu để chùm đạn cân đối ở giữa
 	// Ví dụ: 2 viên -> offset -5 và +5
